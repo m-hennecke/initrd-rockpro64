@@ -1,0 +1,6 @@
+drivers/nvmem/nvmem-rockchip-otp.ko
+drivers/phy/rockchip/phy-rockchip-pcie.ko
+drivers/gpu/arm/mali400/mali/mali.ko
+drivers/gpu/arm/midgard/midgard_kbase.ko
+drivers/gpu/drm/bridge/synopsys/dw-hdmi-i2s-audio.ko
+drivers/iio/adc/rockchip_saradc.ko

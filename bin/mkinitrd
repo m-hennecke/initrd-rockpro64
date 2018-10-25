@@ -1,0 +1,71 @@
+#!/bin/sh
+
+copy_shared() {
+	local _base
+	local _file
+	_file=$1
+	ldd ${_file} | grep "=> /" | cut -d ' ' -f 3 | while read _lib ; do
+		_base=`dirname ${_lib}`
+		mkdir -p ${_initramfs}${_base}
+		cp -a ${_lib} ${_initramfs}${_base}
+	done
+	_base=`dirname ${_file}`
+	mkdir -p ${_initramfs}${_base}
+	cp -a ${_file} ${_initramfs}${_file}
+}
+		
+
+cd `dirname $0`/.. || {
+	echo "Unable to switch working directory.";
+	exit 1;
+}
+
+test -f ./modules.list || {
+	echo "No modules list found, bailing out."
+	exit 1
+}
+
+test -d ./files || {
+	echo "No files directory found, bailing out."
+	exit 1
+}
+
+[ "$(id -u)" -ne 0 ] && {
+	echo "Need to be root to execute."
+	exit 1
+}
+
+_kernel_version=$1
+test -z "${_kernel_version}" && {
+	echo "Usage: $0 kernel_version"
+	exit 1
+}
+test -d /lib/modules/${_kernel_version} || {
+	echo "No modules found for ${_kernel_version}."
+	exit 1
+}
+_initramfs="/usr/src/initramfs-${_kernel_version}"
+
+mkdir -p ${_initramfs}/{bin,dev,etc,lib,lib64,mnt/root,proc,root,sbin,sys}
+cp -a /dev/{null,console,tty} ${_initramfs}/dev/
+cp -a /bin/busybox ${_initramfs}/bin/busybox
+mkdir -p ${_initramfs}/lib/modules/${_kernel_version}
+while read _module ; do
+	_abspath="/lib/modules/${_kernel_version}/kernel/${_module}"
+	_dir=`dirname ${_abspath}`
+	install -d -o root -g root -m 755 "${_initramfs}/${_dir}"
+	install -o root -g root -m 644 "${_abspath}" "${_initramfs}/${_abspath}"
+done < ./modules.list
+
+(cd ./files && cp -a ./ ${_initramfs}/)
+chmod a+x ${_initramfs}/init
+
+for _file in /sbin/e2fsck ; do
+	copy_shared ${_file}
+done
+
+for _file in /sbin/fsck.ext{2,3,4} ; do
+	ln ${_initramfs}/sbin/e2fsck ${_initramfs}${_file}
+done
+
+cd ${_initramfs} && find . -print0 | cpio --null -ov --format=newc | gzip > /boot/initramfs-${_kernel_version}.new && mv /boot/initramfs-${_kernel_version}{.new,}

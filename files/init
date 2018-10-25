@@ -1,0 +1,62 @@
+#!/bin/busybox sh
+
+rescue_shell() {
+	echo "Something went wrong. Dropping to shell."
+	exec /bin/busybox sh
+}
+
+cmdline() {
+	local value
+	value=" $(cat /proc/cmdline) "
+	value="${value##* $1=}"
+	value="${value%% *}"
+	[ "${value}" != "" ] && echo "${value}"
+}
+
+load_modules() {
+	local _m
+	for _m in phy-rockchip-pcie midgard_kbase mali ; do
+		modprobe ${_m}
+	done
+}
+
+[ -d /dev ]  || mkdir -m 0755 /dev
+[ -d /root ] || mkdir -m 0700 /root
+[ -d /sys ]  || mkdir /sys
+[ -d /proc ] || mkdir /proc
+[ -d /tmp ]  || mkdir /tmp
+
+mkdir -p /var/lock
+
+# Mount filesystems
+mount -t sysfs -o nodev,noexec,nosuid sysfs /sys
+mount -t proc -o nodev,noexec,nosuid proc /proc
+
+mount -t devtmpfs -o nosuid,mode=0755 udev /dev
+mkdir /dev/{pts,bus}
+mount -t devpts -o noexec,nosuid,gid=5,mode=0620 devpts /dev/pts || true
+mount -t tmpfs -o "noexec,nosuid,size=10%,mode=0755" tmpfs /run
+
+# Set modprobe env
+export MODPROBE_OPTIONS="-qb"
+load_modules
+
+rootfs=
+clirootarg=$(cmdline root)
+if [ -n "${clirootarg}" ]; then
+	if [[ "${clirootarg}" == /dev/* ]] ; then
+		rootfs=${clirootarg}
+	else
+		rootfs=$(findfs ${clirootarg});
+	fi
+fi
+[ -z "${rootfs}" ] && rootfs=$(findfs LABEL=gentoo-root)
+
+# Mount root filesystem
+mount -o ro ${rootfs} /mnt/root || rescue_shell
+
+# Cleanup
+mount --move /proc /mnt/root/proc
+mount --move /sys /mnt/root/sys
+
+exec switch_root /mnt/root /sbin/init
