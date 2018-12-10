@@ -4,3 +4,9 @@ drivers/gpu/arm/mali400/mali/mali.ko
 drivers/gpu/arm/midgard/midgard_kbase.ko
 drivers/gpu/drm/bridge/synopsys/dw-hdmi-i2s-audio.ko
 drivers/iio/adc/rockchip_saradc.ko
+drivers/rtc/rtc-rk808.ko
+drivers/pci/controller/pcie-rockchip-host.ko
+drivers/thermal/rockchip_thermal.ko
+drivers/gpu/drm/rockchip/rockchipdrm.ko
+drivers/phy/rockchip/phy-rockchip-inno-hdmi.ko
+net/ipv6/ipv6.ko

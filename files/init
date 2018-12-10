@@ -15,8 +15,42 @@ cmdline() {
 
 load_modules() {
 	local _m
-	for _m in phy-rockchip-pcie midgard_kbase mali ; do
+	for _m in pcie-rockchip-host phy-rockchip-pcie rtc-rk808 \
+			nvme-core nvme ipv6 \
+			rockchip_thermal rockchip_saradc \
+			phy-rockchip-inno-hdmi ; do
 		modprobe ${_m}
+	done
+}
+
+wait_for_pci() {
+	local _timeout
+	local _num_pci
+	_timeout=5
+	while test ${_timeout} -gt 0 ; do
+	        sleep 1
+	        _timeout=$((_timeout - 1))
+		_num_pci=$(lspci | wc -l)
+		test ${_num_pci} -gt 0 && break
+	done
+}
+
+fixup_nvme_ps() {
+	if [ -f /sys/module/nvme_core/parameters/default_ps_max_latency_us ] ; then
+		echo -n "default_ps_max_latency_us: "
+		cat /sys/module/nvme_core/parameters/default_ps_max_latency_us
+		echo 5500 > /sys/module/nvme_core/parameters/default_ps_max_latency_us
+	else
+		echo "No entry for default_ps_max_latency_us found in nvme-core module"
+	fi
+}
+
+
+setup_powersave() {
+	local _cpufreq
+	[[ -d /sys/devices/system/cpu/cpufreq/policy0 ]] || return 0
+	for _cpufreq in /sys/devices/system/cpu/cpufreq/policy* ; do
+		echo ondemand > ${_cpufreq}/scaling_governor
 	done
 }
 
@@ -25,6 +59,7 @@ load_modules() {
 [ -d /sys ]  || mkdir /sys
 [ -d /proc ] || mkdir /proc
 [ -d /tmp ]  || mkdir /tmp
+[ -d /run ]  || mkdir /run
 
 mkdir -p /var/lock
 
@@ -33,15 +68,21 @@ mount -t sysfs -o nodev,noexec,nosuid sysfs /sys
 mount -t proc -o nodev,noexec,nosuid proc /proc
 
 mount -t devtmpfs -o nosuid,mode=0755 udev /dev
-mkdir /dev/{pts,bus}
+mkdir /dev/pts
+mkdir /dev/bus
 mount -t devpts -o noexec,nosuid,gid=5,mode=0620 devpts /dev/pts || true
 mount -t tmpfs -o "noexec,nosuid,size=10%,mode=0755" tmpfs /run
 
 # Set modprobe env
 export MODPROBE_OPTIONS="-qb"
 load_modules
+wait_for_pci || true
+sleep 2
+#fixup_nvme_ps || true
+setup_powersave || true
 
 rootfs=
+rootfstype=$(cmdline rootfstype)
 clirootarg=$(cmdline root)
 if [ -n "${clirootarg}" ]; then
 	if [[ "${clirootarg}" == /dev/* ]] ; then
@@ -52,8 +93,15 @@ if [ -n "${clirootarg}" ]; then
 fi
 [ -z "${rootfs}" ] && rootfs=$(findfs LABEL=gentoo-root)
 
+[ -z "${rootfs}" ] && {
+	echo "Unable to find root filesystem. Aborting boot..."
+	rescue_shell
+}
+
+[ -n "${rootfstype}" ] && rootfstype="-t ${rootfstype}"
+
 # Mount root filesystem
-mount -o ro ${rootfs} /mnt/root || rescue_shell
+mount -o ro ${rootfs} ${rootfstype} /mnt/root || rescue_shell
 
 # Cleanup
 mount --move /proc /mnt/root/proc

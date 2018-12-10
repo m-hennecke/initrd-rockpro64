@@ -13,7 +13,7 @@ copy_shared() {
 	mkdir -p ${_initramfs}${_base}
 	cp -a ${_file} ${_initramfs}${_file}
 }
-		
+
 
 cd `dirname $0`/.. || {
 	echo "Unable to switch working directory.";
@@ -45,24 +45,40 @@ test -d /lib/modules/${_kernel_version} || {
 	exit 1
 }
 _initramfs="/usr/src/initramfs-${_kernel_version}"
+rm -rf "${_initramfs}/"
 
 mkdir -p ${_initramfs}/{bin,dev,etc,lib,lib64,mnt/root,proc,root,sbin,sys}
 cp -a /dev/{null,console,tty} ${_initramfs}/dev/
+ln -s /proc/self/fd/2 ${_initramfs}/dev/stderr
+ln -s /proc/self/fd/1 ${_initramfs}/dev/stdout
+ln -s /proc/self/fd/0 ${_initramfs}/dev/stdin
+_major=8
+for _disk in sd{a,b,c} ; do
+	mknod -m 0660 ${_initramfs}/dev/${_disk} b ${_major} 0
+	for _part in 1 2 3 4 5 6 ; do
+		mknod -m 0660 ${_initramfs}/dev/${_disk}${_part} b ${_major} ${_part}
+	done
+	_major=$((_major + 1))
+done
 cp -a /bin/busybox ${_initramfs}/bin/busybox
 mkdir -p ${_initramfs}/lib/modules/${_kernel_version}
+mkdir -p ${_initramfs}/etc/modprobe.d
 while read _module ; do
 	_abspath="/lib/modules/${_kernel_version}/kernel/${_module}"
 	_dir=`dirname ${_abspath}`
-	install -d -o root -g root -m 755 "${_initramfs}/${_dir}"
-	install -o root -g root -m 644 "${_abspath}" "${_initramfs}/${_abspath}"
+	if [ -d "${_dir}" ] ; then
+		install -d -o root -g root -m 755 "${_initramfs}/${_dir}"
+		install -o root -g root -m 644 "${_abspath}" "${_initramfs}/${_abspath}"
+	fi
 done < ./modules.list
 
 (cd ./files && cp -a ./ ${_initramfs}/)
 chmod a+x ${_initramfs}/init
 
-for _file in /sbin/e2fsck ; do
+for _file in /sbin/e2fsck /sbin/fsck /bin/mknod ; do
 	copy_shared ${_file}
 done
+ln -s ${_initramfs}/{lib64,lib}/
 
 for _file in /sbin/fsck.ext{2,3,4} ; do
 	ln ${_initramfs}/sbin/e2fsck ${_initramfs}${_file}
